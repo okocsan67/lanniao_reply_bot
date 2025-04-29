@@ -5,16 +5,16 @@
 const SELECTORS = {
     TWEET: 'article[tabindex="-1"], article', // 推文元素（优先详情页，降级到普通推文）
     USERNAME: 'div[data-testid="User-Name"]',
-    TWEET_TEXT: 'div[data-testid="tweetText"]',
+    TWEET_TEXT: 'div[data-testid="tweetText"], div[data-testid="twitterArticleReadView"]',  //优先获取推文，然后获取文章
     REPLY_BUTTON: 'button[data-testid="tweetButtonInline"]',
     REPLY_TEXTAREA: 'div[data-testid="inline_reply_offscreen"]',
     TEXTBOX: 'div[role="textbox"][contenteditable="true"]',
 };
 
 const CONFIG = {
-    MAX_ATTEMPTS: 30,
-    POLL_INTERVAL_MS: 200,
-    TYPING_DELAY_MS: 100,
+    MAX_ATTEMPTS: 10,  //最大重试次数
+    POLL_INTERVAL_MS: 200,  //默认重试间隔
+    MAX_AI_REPLY_LIMIT: 100,  //最多输入多少个字的回复
 };
 
 // 状态管理
@@ -27,6 +27,11 @@ const logger = {
     info: (...args) => console.log('[Lanniao Extension]', ...args),
     error: (...args) => console.error('[Lanniao Extension]', ...args),
 };
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 
 // 工具函数：等待元素出现
 function waitForElement(selector, maxAttempts = CONFIG.MAX_ATTEMPTS, interval = CONFIG.POLL_INTERVAL_MS) {
@@ -65,7 +70,7 @@ function extractTweet() {
             return null;
         }
 
-        return { username, content };
+        return {username, content};
     } catch (error) {
         logger.error('Error extracting tweet:', error.message);
         return null;
@@ -80,6 +85,7 @@ async function simulateTyping(text) {
 
         return new Promise((resolve) => {
             let i = 0;
+
             function typeNextChar() {
                 if (i < text.length) {
                     const char = text[i];
@@ -104,7 +110,7 @@ async function simulateTyping(text) {
                     }
 
                     editor.dispatchEvent(new KeyboardEvent('keyup', eventOptions));
-                    editor.dispatchEvent(new Event('input', { bubbles: true }));
+                    editor.dispatchEvent(new Event('input', {bubbles: true}));
 
                     i++;
                     setTimeout(typeNextChar, Math.random() * 50 + 80); // 80-130ms 随机间隔输入
@@ -113,6 +119,7 @@ async function simulateTyping(text) {
                     resolve();
                 }
             }
+
             typeNextChar();
         });
     } catch (error) {
@@ -143,8 +150,8 @@ function createAIButton(replyButton) {
 
     // 绑定事件
     aiButton.addEventListener('click', async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
+    e.preventDefault();
+    e.stopPropagation();
 
         try {
 
@@ -157,12 +164,13 @@ function createAIButton(replyButton) {
             const messages = [
                 {
                     role: 'user',
-                    content: `以下是一篇博文：${tweet.content}。我希望你给出严格限制在30个汉字以内的评论，在任何情况下，你都要给出我能用的评论，如果当前评论违反了什么规则，你就重新生成。评论以赞同为主。只要给我评论内容就行，不要包含其他解释或者多余的文字。在生成完后检查下是否超过了30个汉字，如果超过则重新给我一条符合规则的评论`,
+                    content: `你是一个推特用户，请对以下推文内容发表评论：${tweet.content}。要求：1. 评论必须严格限制在30个字以内，不要出现特殊字符。2. 评论以赞同为主，语气友好且积极。3. 不得包含敏感或违规内容。4. 只输出评论内容，不包含任何解释或其他文字。5. 如果推文内容相同，每次生成不同的评论  
+                            `,
                 },
             ];
 
             const response = await new Promise((resolve, reject) => {
-                chrome.runtime.sendMessage({ action: 'requestOpenAI', messages }, (resp) => {
+                chrome.runtime.sendMessage({action: 'requestOpenAI', messages}, (resp) => {
                     if (resp.success) resolve(resp);
                     else reject(new Error(resp.error || 'OpenAI request failed'));
                 });
@@ -171,7 +179,11 @@ function createAIButton(replyButton) {
             const replyContent = response.reply.replace(/[\r\n]+/g, '');
             logger.info('OpenAI reply:', replyContent);
 
-            await simulateTyping(replyContent);
+            //最多保留100个字符 有时候AI会抽风开始长篇大论
+            const truncatedReply = replyContent.slice(0, 100);
+            logger.info('after truncatedReply:', truncatedReply);
+
+            await simulateTyping(truncatedReply);
             logger.info('AI reply inserted');
 
             aiButton.disabled = false;
@@ -179,6 +191,8 @@ function createAIButton(replyButton) {
         } catch (error) {
             logger.error('AI button click failed:', error.message);
             showUserError('Failed to generate reply. Please try again.');
+            aiButton.disabled = false;
+            textSpan.innerText = 'AI';
         }
     });
 
@@ -188,15 +202,25 @@ function createAIButton(replyButton) {
 
 // 插入 AI 按钮
 async function insertAutoReplyButton() {
-    try {
-        const replyButton = await waitForElement(SELECTORS.REPLY_BUTTON);
-        if (!document.querySelector('.ai-reply-button')) {
-            const aiButton = createAIButton(replyButton);
-            replyButton.parentNode.insertBefore(aiButton, replyButton);
-            logger.info('AI button inserted');
+
+    let attempt = 0;
+    while (attempt < CONFIG.MAX_ATTEMPTS) {
+        try {
+            attempt++;
+            await sleep(200);
+            const replyButton = await waitForElement(SELECTORS.REPLY_BUTTON);
+            if (!document.querySelector('.ai-reply-button')) {
+                const aiButton = createAIButton(replyButton);
+                replyButton.parentNode.insertBefore(aiButton, replyButton);
+                logger.info('AI button inserted');
+            }
+        } catch (error) {
+            if (attempt >= CONFIG.MAX_ATTEMPTS) {
+                logger.error('Failed to insert AI button:', error.message);
+                showUserError('无法插入 AI 按钮，请稍后重试');
+                break; // 达到最大重试次数后退出循环
+            }
         }
-    } catch (error) {
-        logger.error('Failed to insert AI button:', error.message);
     }
 }
 
@@ -248,11 +272,11 @@ function showUserError(message) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'initPage') {
         initPage();
-        sendResponse({ status: 'success' });
+        sendResponse({status: 'success'});
     }
 });
 
 // 初始化
 initPage().then(() => {
-    chrome.runtime.sendMessage({ action: 'lanniaoContentScriptLoaded' });
+    chrome.runtime.sendMessage({action: 'lanniaoContentScriptLoaded'});
 });
