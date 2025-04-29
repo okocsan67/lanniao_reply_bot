@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "LanNiao X AutoReply BOT",
+  "version": "0.0.0.1",
+  "description": "自动根据推文回复评论的机器人 by蓝鸟会",
+  "permissions": ["tabs", "scripting", "activeTab", "storage"],
+  "host_permissions": ["https://x.com/*",
+                       "https://gptapi.us/*",
+                       "https://api.gptapi.us/*"
+                      ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://x.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "options_page": "options.html"
+}
