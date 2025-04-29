@@ -3,16 +3,17 @@
 
 // 常量定义
 const SELECTORS = {
-    TWEET: 'article[tabindex="-1"], article', // 推文元素（优先详情页，降级到普通推文）
+    ARTICLE: 'article[tabindex="-1"]', // 当前需要回复的推文整个块元素
     USERNAME: 'div[data-testid="User-Name"]',
-    TWEET_TEXT: 'div[data-testid="tweetText"], div[data-testid="twitterArticleReadView"]',  //优先获取推文，然后获取文章
+    TWEET_NORMAL: 'div[data-testid="tweetText"]',  //推文详情
+    TWEET_ARTICLE: 'div[data-testid="twitterArticleReadView"]',  //文章类型的推文详情
     REPLY_BUTTON: 'button[data-testid="tweetButtonInline"]',
     REPLY_TEXTAREA: 'div[data-testid="inline_reply_offscreen"]',
     TEXTBOX: 'div[role="textbox"][contenteditable="true"]',
 };
 
 const CONFIG = {
-    MAX_ATTEMPTS: 10,  //最大重试次数
+    MAX_ATTEMPTS: 20,  //最大重试次数
     POLL_INTERVAL_MS: 200,  //默认重试间隔
     MAX_AI_REPLY_LIMIT: 100,  //最多输入多少个字的回复
 };
@@ -25,6 +26,7 @@ const state = {
 // 日志工具
 const logger = {
     info: (...args) => console.log('[Lanniao Extension]', ...args),
+    warn: (...args) => console.log('[Lanniao Extension]', ...args),
     error: (...args) => console.error('[Lanniao Extension]', ...args),
 };
 
@@ -55,22 +57,25 @@ function waitForElement(selector, maxAttempts = CONFIG.MAX_ATTEMPTS, interval = 
 // 提取推文信息
 function extractTweet() {
     try {
-        const tweetElements = document.querySelectorAll(SELECTORS.TWEET);
-        if (!tweetElements.length) {
-            logger.error('No tweet elements found');
+        const articleElements = document.querySelectorAll(SELECTORS.ARTICLE);
+        if (!articleElements.length) {
+            logger.error('No article elements found');
             return null;
         }
 
-        const tweetElement = tweetElements[0]; // 优先取第一条
-        const username = tweetElement.querySelector(SELECTORS.USERNAME)?.innerText;
-        const content = tweetElement.querySelector(SELECTORS.TWEET_TEXT)?.innerText;
-
-        if (!username || !content) {
-            logger.error('Failed to extract username or content');
-            return null;
+        const tweetNormalElement = articleElements[0].querySelector(SELECTORS.TWEET_NORMAL); // 优先取普通推文
+        const tweetArticleElement = articleElements[0].querySelector(SELECTORS.TWEET_ARTICLE); // 优先取普通推文
+        if(tweetNormalElement){
+            const content = tweetNormalElement?.innerText;
+            return {content};
+        }else if (tweetArticleElement){
+            const content = tweetArticleElement?.innerText;
+            return {content};
+        }else{
+            const content = "无内容";
+            logger.error('Failed to extract content return default no content');
+            return {content};
         }
-
-        return {username, content};
     } catch (error) {
         logger.error('Error extracting tweet:', error.message);
         return null;
@@ -130,7 +135,11 @@ async function simulateTyping(text) {
 
 // 创建 AI 回复按钮
 function createAIButton(replyButton) {
-    if (state.aiButton) return state.aiButton;
+
+    //如果已经存在就尝试摆放位置
+    if (state.aiButton) {
+        return state.aiButton;
+    }
 
     const aiButton = replyButton.cloneNode(true);
     aiButton.classList.add('ai-reply-button');
@@ -154,17 +163,17 @@ function createAIButton(replyButton) {
     e.stopPropagation();
 
         try {
-
             aiButton.disabled = true;
             textSpan.innerText = '生成中';
 
             const tweet = extractTweet();
             if (!tweet) throw new Error('Unable to extract tweet');
 
+
             const messages = [
                 {
                     role: 'user',
-                    content: `你是一个推特用户，请对以下推文内容发表评论：${tweet.content}。要求：1. 评论必须严格限制在30个字以内，不要出现特殊字符。2. 评论以赞同为主，语气友好且积极。3. 不得包含敏感或违规内容。4. 只输出评论内容，不包含任何解释或其他文字。5. 如果推文内容相同，每次生成不同的评论  
+                    content: `你是一个推特用户，请对以下推文内容发表评论[${tweet.content}] 要求：1. 评论必须严格限制在30个字以内，不要出现特殊字符。2. 评论以赞同为主，语气友好且积极。3. 不得包含敏感或违规内容。4. 只输出评论内容，不包含任何解释或其他文字。5. 如果推文内容相同，每次生成不同的评论。6. 推文如果无内容或者为空，生成水评论的内容  
                             `,
                 },
             ];
@@ -206,14 +215,15 @@ async function insertAutoReplyButton() {
     let attempt = 0;
     while (attempt < CONFIG.MAX_ATTEMPTS) {
         try {
+
             attempt++;
             await sleep(200);
             const replyButton = await waitForElement(SELECTORS.REPLY_BUTTON);
-            if (!document.querySelector('.ai-reply-button')) {
-                const aiButton = createAIButton(replyButton);
-                replyButton.parentNode.insertBefore(aiButton, replyButton);
-                logger.info('AI button inserted');
-            }
+            const aiButton = createAIButton(replyButton);
+            replyButton.parentNode.insertBefore(aiButton, replyButton);
+            //logger.info('AI button inserted');
+            break;
+
         } catch (error) {
             if (attempt >= CONFIG.MAX_ATTEMPTS) {
                 logger.error('Failed to insert AI button:', error.message);
@@ -224,13 +234,16 @@ async function insertAutoReplyButton() {
     }
 }
 
+
 // 监听回复框点击
 async function addReplyTextAreaListener() {
     try {
         const replyTextArea = await waitForElement(SELECTORS.REPLY_TEXTAREA);
-        replyTextArea.removeEventListener('click', insertAutoReplyButton);
-        replyTextArea.addEventListener('click', insertAutoReplyButton);
-        logger.info('Reply textarea listener added');
+        if(replyTextArea) {
+            replyTextArea.removeEventListener('click', insertAutoReplyButton);
+            replyTextArea.addEventListener('click', insertAutoReplyButton);
+            logger.info('Reply textarea listener added');
+        }
     } catch (error) {
         logger.error('Failed to add reply textarea listener:', error.message);
     }
@@ -247,6 +260,7 @@ async function initPage() {
 
     try {
         await addReplyTextAreaListener();
+
     } catch (error) {
         logger.error('Page initialization failed:', error.message);
     }
@@ -267,6 +281,7 @@ function showUserError(message) {
     document.body.appendChild(div);
     setTimeout(() => div.remove(), 3000);
 }
+
 
 // 消息监听
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

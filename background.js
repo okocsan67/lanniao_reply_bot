@@ -75,28 +75,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message.action === 'lanniaoContentScriptLoaded') {
         logger.info(`Content script loaded for tab ${sender.tab.id}`);
-        // 初始化页面（仅在详情页）
-        const url = sender.tab.url;
-        if (url && /^https:\/\/x\.com\/[^/]+\/status\/\d+$/.test(url)) {
-            chrome.tabs.sendMessage(sender.tab.id, { action: 'initPage' }, (response) => {
-                if (chrome.runtime.lastError) {
-                    logger.error('Error sending initPage message:', chrome.runtime.lastError.message);
-                } else {
-                    logger.info('initPage message sent:', response);
-                }
-            });
-        }
-    }
-});
+        // 监听标签更新
+        chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+            if (changeInfo.url && /^https:\/\/x\.com\/[^/]+\/status\/\d+$/.test(changeInfo.url)) {
 
-// 监听标签更新
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.url && /^https:\/\/x\.com\/[^/]+\/status\/\d+$/.test(changeInfo.url)) {
-        chrome.tabs.sendMessage(tabId, { action: 'initPage' }, (response) => {
-            if (chrome.runtime.lastError) {
-                logger.error('Error sending initPage message:', chrome.runtime.lastError.message);
-            } else {
-                logger.info('initPage message sent:', response);
+                chrome.tabs.sendMessage(tabId, { action: 'initPage' }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        logger.error('Error sending initPage message:', chrome.runtime.lastError.message);
+                    } else {
+                        logger.info('initPage message sent:', response);
+                    }
+                });
             }
         });
     }
