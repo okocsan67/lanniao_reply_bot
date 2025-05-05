@@ -12,6 +12,15 @@ const SELECTORS = {
     TEXTBOX: 'div[role="textbox"][contenteditable="true"]',
 };
 
+// 新增：回复风格选项
+const REPLY_STYLES = [
+    { id: 'agree', label: '表示赞同', prompt: '以友好、积极的语气表示赞同，评论简洁且不超过30字，无特殊字符。' },
+    { id: 'disagree', label: '表示反对', prompt: '以礼貌、建设性的语气表示反对，评论简洁且不超过30字，无特殊字符。' },
+    { id: 'humorous', label: '幽默回复', prompt: '以幽默、友好的语气回复，评论简洁且不超过30字，无特殊字符。' },
+    { id: 'collaboration', label: '寻求合作', prompt: '以专业、热情的语气寻求合作机会，评论简洁且不超过30字，无特殊字符。' },
+    { id: 'share_opinion', label: '分享观点', prompt: '以中立、清晰的语气分享个人观点，评论简洁且不超过30字，无特殊字符。' }
+];
+
 const CONFIG = {
     MAX_ATTEMPTS: 20,  //最大重试次数
     POLL_INTERVAL_MS: 200,  //默认重试间隔
@@ -133,10 +142,67 @@ async function simulateTyping(text) {
     }
 }
 
-// 创建 AI 回复按钮
-function createAIButton(replyButton) {
+// 创建多选列表
+function createStyleSelector(aiButton, onSelect) {
+    // 移除已有的选择器（避免重复）
+    const existingSelector = document.querySelector('.style-selector');
+    if (existingSelector) existingSelector.remove();
 
-    //如果已经存在就尝试摆放位置
+    const selector = document.createElement('div');
+    selector.className = 'style-selector';
+    selector.style.position = 'absolute';
+    selector.style.backgroundColor = '#fff';
+    selector.style.border = '1px solid #ccc';
+    selector.style.borderRadius = '4px';
+    selector.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
+    selector.style.zIndex = '9999';
+    selector.style.padding = '10px';
+    selector.style.minWidth = '150px';
+
+    // 计算位置（显示在按钮下方）
+    const rect = aiButton.getBoundingClientRect();
+    selector.style.top = `${rect.bottom + window.scrollY + 5}px`;
+    selector.style.left = `${rect.left + window.scrollX}px`;
+
+    // 添加选项
+    REPLY_STYLES.forEach(style => {
+        const option = document.createElement('div');
+        option.style.padding = '8px';
+        option.style.cursor = 'pointer';
+        option.style.color = '#000';
+        option.style.fontSize = '14px';
+        option.textContent = style.label;
+        option.addEventListener('click', () => {
+            onSelect(style);
+            selector.remove();
+        });
+        option.addEventListener('mouseover', () => {
+            option.style.backgroundColor = '#f0f0f0';
+        });
+        option.addEventListener('mouseout', () => {
+            option.style.backgroundColor = '#fff';
+        });
+        selector.appendChild(option);
+    });
+
+    document.body.appendChild(selector);
+
+    // 点击其他地方关闭
+    const closeSelector = (event) => {
+        if (!selector.contains(event.target) && event.target !== aiButton) {
+            selector.remove();
+            document.removeEventListener('click', closeSelector);
+        }
+    };
+    setTimeout(() => {
+        document.addEventListener('click', closeSelector);
+    }, 0);
+
+    return selector;
+}
+
+// 修改：创建 AI 回复按钮
+function createAIButton(replyButton) {
     if (state.aiButton) {
         return state.aiButton;
     }
@@ -147,62 +213,59 @@ function createAIButton(replyButton) {
     aiButton.disabled = false;
     aiButton.removeAttribute('disabled');
 
-    // 设置按钮文本
     const textSpan = aiButton.querySelector('span span') || aiButton.querySelector('span') || aiButton;
     textSpan.innerText = 'AI';
 
-    // 应用样式
     aiButton.style.backgroundColor = '#1DA1F2';
     aiButton.style.color = '#fff';
     aiButton.style.opacity = '1';
     aiButton.style.marginRight = '10px';
 
-    // 绑定事件
     aiButton.addEventListener('click', async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
+        e.preventDefault();
+        e.stopPropagation();
 
-        try {
-            aiButton.disabled = true;
-            textSpan.innerText = '生成中';
+        // 显示风格选择器
+        createStyleSelector(aiButton, async (selectedStyle) => {
+            try {
+                aiButton.disabled = true;
+                textSpan.innerText = '生成中';
 
-            const tweet = extractTweet();
-            if (!tweet) throw new Error('Unable to extract tweet');
+                const tweet = extractTweet();
+                if (!tweet) throw new Error('Unable to extract tweet');
 
+                const messages = [
+                    {
+                        role: 'user',
+                        content: `你是一个推特用户，请对以下推文内容发表评论[${tweet.content}] 要求：1. ${selectedStyle.prompt} 2. 如果推文内容为空，生成简短的友好评论。3. 不得包含敏感或违规内容，不要有任何特殊字符，或者符号 4. 只输出评论内容。`
+                    }
+                ];
 
-            const messages = [
-                {
-                    role: 'user',
-                    content: `你是一个推特用户，请对以下推文内容发表评论[${tweet.content}] 要求：1. 评论必须严格限制在30个字以内，不要出现特殊字符。2. 评论以赞同为主，语气友好且积极。3. 不得包含敏感或违规内容。4. 只输出评论内容，不包含任何解释或其他文字。5. 如果推文内容相同，每次生成不同的评论。6. 推文如果无内容或者为空，生成水评论的内容  
-                            `,
-                },
-            ];
-
-            const response = await new Promise((resolve, reject) => {
-                chrome.runtime.sendMessage({action: 'requestOpenAI', messages}, (resp) => {
-                    if (resp.success) resolve(resp);
-                    else reject(new Error(resp.error || 'OpenAI request failed'));
+                const response = await new Promise((resolve, reject) => {
+                    chrome.runtime.sendMessage({ action: 'requestOpenAI', messages }, (resp) => {
+                        if (resp.success) resolve(resp);
+                        else reject(new Error(resp.error || 'OpenAI request failed'));
+                    });
                 });
-            });
 
-            const replyContent = response.reply.replace(/[\r\n]+/g, '');
-            logger.info('OpenAI reply:', replyContent);
+                const replyContent = response.reply.replace(/[\r\n]+/g, '');
+                logger.info('OpenAI reply:', replyContent);
 
-            //最多保留100个字符 有时候AI会抽风开始长篇大论
-            const truncatedReply = replyContent.slice(0, 100);
-            logger.info('after truncatedReply:', truncatedReply);
+                const truncatedReply = replyContent.slice(0, CONFIG.MAX_AI_REPLY_LIMIT);
+                logger.info('after truncatedReply:', truncatedReply);
 
-            await simulateTyping(truncatedReply);
-            logger.info('AI reply inserted');
+                await simulateTyping(truncatedReply);
+                logger.info('AI reply inserted');
 
-            aiButton.disabled = false;
-            textSpan.innerText = 'AI';
-        } catch (error) {
-            logger.error('AI button click failed:', error.message);
-            showUserError('Failed to generate reply. Please try again.');
-            aiButton.disabled = false;
-            textSpan.innerText = 'AI';
-        }
+                aiButton.disabled = false;
+                textSpan.innerText = 'AI';
+            } catch (error) {
+                logger.error('AI button click failed:', error.message);
+                showUserError('Failed to generate reply. Please try again.');
+                aiButton.disabled = false;
+                textSpan.innerText = 'AI';
+            }
+        });
     });
 
     state.aiButton = aiButton;
