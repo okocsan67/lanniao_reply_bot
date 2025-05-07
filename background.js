@@ -17,22 +17,6 @@ async function getApiKey() {
     return cachedApiKey;
 }
 
-// 重新注入内容脚本
-async function reinjectContentScript(tabId) {
-    try {
-        await chrome.scripting.executeScript({
-            target: { tabId },
-            files: ['content.js']
-        });
-        logger.info(`Content script reinjected for tab ${tabId}`);
-        return true;
-    } catch (error) {
-        logger.error(`Failed to reinject content script for tab ${tabId}:`, error.message);
-        return false;
-    }
-}
-
-
 // 监听存储变化
 chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.openaiApiKey) {
@@ -56,7 +40,6 @@ async function sendOpenAIRequest(messages) {
                 Authorization: `Bearer ${apiKey}`,
             },
             body: JSON.stringify({
-                //model: 'gpt-4o-mini',
                 model: 'grok-3',
                 messages,
             }),
@@ -87,42 +70,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             .then((reply) => sendResponse({ success: true, reply }))
             .catch((error) => sendResponse({ success: false, error: error.message }));
         return true; // 异步响应
-    }
-
-    if (message.action === 'lanniaoContentScriptLoaded') {
-        logger.info(`Content script loaded for tab ${sender.tab.id}`);
-        const tabId = sender.tab.id;
-
-        // 存储已加载的 tabId
-        chrome.storage.local.set({ [`contentScriptLoaded_${tabId}`]: true });
-
-        chrome.tabs.onUpdated.addListener(async (updateTabId, changeInfo, tab) => {
-            if (updateTabId === tabId && changeInfo.url && /^https:\/\/x\.com\/[^/]+\/status\/\d+$/.test(changeInfo.url)) {
-                try {
-                    await new Promise((resolve, reject) => {
-                        chrome.tabs.sendMessage(tabId, { action: 'initPage' }, (response) => {
-                            if (chrome.runtime.lastError) {
-                                logger.warn('Content script not responding, attempting to reinject:', chrome.runtime.lastError.message);
-                                reinjectContentScript(tabId).then(async (success) => {
-                                    if (success) {
-                                        // 等待 content.js 自初始化
-                                        logger.info(`Waiting for content script to initialize in tab ${tabId}`);
-                                        resolve();
-                                    } else {
-                                        reject(new Error('Failed to reinject content script'));
-                                    }
-                                });
-                            } else {
-                                logger.info('initPage message sent:', response);
-                                resolve();
-                            }
-                        });
-                    });
-                } catch (error) {
-                    logger.error('Error handling initPage:', error.message);
-                }
-            }
-        });
     }
 });
 

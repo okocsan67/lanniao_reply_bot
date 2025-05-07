@@ -7,9 +7,10 @@ const SELECTORS = {
     USERNAME: 'div[data-testid="User-Name"]',
     TWEET_NORMAL: 'div[data-testid="tweetText"]',  //推文详情
     TWEET_ARTICLE: 'div[data-testid="twitterArticleReadView"]',  //文章类型的推文详情
-    REPLY_BUTTON: 'button[data-testid="tweetButtonInline"]',
-    REPLY_TEXTAREA: 'div[data-testid="inline_reply_offscreen"]',
+    REPLY_TEXTAREA: 'div[data-testid="tweetTextarea_0"], div[data-testid="inline_reply_offscreen"]',
     TEXTBOX: 'div[role="textbox"][contenteditable="true"]',
+    REPLY_BUTTON_SELECTOR: 'button[data-testid="tweetButtonInline"], button[data-testid="tweetButton"]',
+    LIKE_BUTTON: 'button[data-testid="like"]',
 };
 
 // 新增：回复风格选项
@@ -281,7 +282,7 @@ async function insertAutoReplyButton() {
 
             attempt++;
             await sleep(200);
-            const replyButton = await waitForElement(SELECTORS.REPLY_BUTTON);
+            const replyButton = await waitForElement(SELECTORS.REPLY_BUTTON_SELECTOR);
             const aiButton = createAIButton(replyButton);
             replyButton.parentNode.insertBefore(aiButton, replyButton);
             //logger.info('AI button inserted');
@@ -303,9 +304,15 @@ async function addReplyTextAreaListener() {
     try {
         const replyTextArea = await waitForElement(SELECTORS.REPLY_TEXTAREA);
         if(replyTextArea) {
-            replyTextArea.removeEventListener('click', insertAutoReplyButton);
-            replyTextArea.addEventListener('click', insertAutoReplyButton);
-            logger.info('Reply textarea listener added');
+
+            if (replyTextArea.dataset.listenerAdded === 'true') {
+                //console.log('监听器已注入，避免重复');
+            }else {
+                replyTextArea.removeEventListener('click', insertAutoReplyButton);
+                replyTextArea.addEventListener('click', insertAutoReplyButton);
+                replyTextArea.dataset.listenerAdded = 'true'; // 添加标记
+                logger.info('Reply textarea listener added');
+            }
         }
     } catch (error) {
         logger.error('Failed to add reply textarea listener:', error.message);
@@ -315,15 +322,8 @@ async function addReplyTextAreaListener() {
 // 初始化页面
 async function initPage() {
 
-    const currentUrl = window.location.href;
-    if (!/^https:\/\/x\.com\/[^/]+\/status\/\d+$/.test(currentUrl)) {
-        logger.info('Not a tweet detail page, skipping initialization');
-        return;
-    }
-
     try {
-        await addReplyTextAreaListener();
-
+        runMonitorWhenReady();
     } catch (error) {
         logger.error('Page initialization failed:', error.message);
     }
@@ -345,14 +345,50 @@ function showUserError(message) {
     setTimeout(() => div.remove(), 3000);
 }
 
+// 监听回复按钮出现的函数
+async function monitorReplyButton() {
+    // 定义目标选择器（根据X平台的HTML结构调整）
 
-// 消息监听
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.action === 'initPage') {
-        initPage();
-        sendResponse({status: 'success'});
+    // 检查按钮是否已存在
+    async function checkForReplyButton() {
+        const replyButton = document.querySelector(SELECTORS.REPLY_BUTTON_SELECTOR);
+        if (replyButton) {
+            //console.log('回复按钮已出现:', replyButton, '时间:', new Date().toISOString());
+            await addReplyTextAreaListener();
+        }
     }
-});
+
+    const observer = new MutationObserver(async (mutations) => {
+        for (const mutation of mutations) {
+            await checkForReplyButton();
+        }
+    });
+
+    // 配置观察选项
+    const config = {
+        childList: true, // 监听子节点变化
+        subtree: true,   // 监听整个子树
+    };
+
+    // 开始观察整个文档
+    observer.observe(document.body, config);
+
+    // 初始检查
+    await checkForReplyButton();
+
+}
+
+
+function runMonitorWhenReady() {
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        setTimeout(monitorReplyButton, 1000); // 延迟1秒执行
+    } else {
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(monitorReplyButton, 1000); // 延迟1秒执行
+        });
+    }
+}
+
 
 // 初始化
 initPage().then(() => {
