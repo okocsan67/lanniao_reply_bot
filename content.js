@@ -1,39 +1,38 @@
-// content.js
-// Chrome 扩展内容脚本，用于在 Twitter/X 推文详情页添加 AI 自动回复功能
-
-// 常量定义
 const SELECTORS = {
-    ARTICLE: 'article[tabindex="-1"]', // 当前需要回复的推文整个块元素
+    ARTICLE: 'article[tabindex="-1"]',
     USERNAME: 'div[data-testid="User-Name"]',
-    TWEET_NORMAL: 'div[data-testid="tweetText"]',  //推文详情
-    TWEET_ARTICLE: 'div[data-testid="twitterArticleReadView"]',  //文章类型的推文详情
+    TWEET_NORMAL: 'div[data-testid="tweetText"]',
+    TWEET_ARTICLE: 'div[data-testid="twitterArticleReadView"]',
     REPLY_TEXTAREA: 'div[data-testid="tweetTextarea_0"], div[data-testid="inline_reply_offscreen"]',
     TEXTBOX: 'div[role="textbox"][contenteditable="true"]',
     REPLY_BUTTON_SELECTOR: 'button[data-testid="tweetButtonInline"], button[data-testid="tweetButton"]',
     LIKE_BUTTON: 'button[data-testid="like"]',
 };
 
-// 新增：回复风格选项
 const REPLY_STYLES = [
     { id: 'agree', label: '表示赞同', prompt: '以友好、积极的语气表示赞同，评论简洁且不超过30字，无特殊字符。' },
     { id: 'disagree', label: '表示反对', prompt: '以礼貌、建设性的语气表示反对，评论简洁且不超过30字，无特殊字符。' },
     { id: 'humorous', label: '幽默回复', prompt: '以幽默、友好的语气回复，评论简洁且不超过30字，无特殊字符。' },
     { id: 'collaboration', label: '寻求合作', prompt: '以专业、热情的语气寻求合作机会，评论简洁且不超过30字，无特殊字符。' },
-    { id: 'share_opinion', label: '分享观点', prompt: '以中立、清晰的语气分享个人观点，评论简洁且不超过30字，无特殊字符。' }
+    { id: 'share_opinion', label: '分享观点', prompt: '以中立、清晰的语气分享个人观点，评论简洁且不超过30字，无特殊字符。' },
+];
+
+const MODELS = [
+    { id: 'grok-3', label: 'Grok-3' },
+    { id: 'gemini', label: 'Gemini' },
 ];
 
 const CONFIG = {
-    MAX_ATTEMPTS: 20,  //最大重试次数
-    POLL_INTERVAL_MS: 200,  //默认重试间隔
-    MAX_AI_REPLY_LIMIT: 100,  //最多输入多少个字的回复
+    MAX_ATTEMPTS: 20,
+    POLL_INTERVAL_MS: 200,
+    MAX_AI_REPLY_LIMIT: 100,
+    MAX_RETRY_COUNT: 2, // 最大重试次数
 };
 
-// 状态管理
 const state = {
     aiButton: null,
 };
 
-// 日志工具
 const logger = {
     info: (...args) => console.log('[Lanniao Extension]', ...args),
     warn: (...args) => console.log('[Lanniao Extension]', ...args),
@@ -44,8 +43,6 @@ function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-
-// 工具函数：等待元素出现
 function waitForElement(selector, maxAttempts = CONFIG.MAX_ATTEMPTS, interval = CONFIG.POLL_INTERVAL_MS) {
     return new Promise((resolve, reject) => {
         let attempts = 0;
@@ -64,7 +61,24 @@ function waitForElement(selector, maxAttempts = CONFIG.MAX_ATTEMPTS, interval = 
     });
 }
 
-// 提取推文信息
+function waitForElements(selector, maxAttempts = CONFIG.MAX_ATTEMPTS, interval = CONFIG.POLL_INTERVAL_MS) {
+    return new Promise((resolve, reject) => {
+        let attempts = 0;
+        const check = () => {
+            const elements = document.querySelectorAll(selector);
+            if (elements) {
+                resolve(elements);
+            } else if (attempts >= maxAttempts) {
+                reject(new Error(`Timeout: Could not find element ${selector} after ${maxAttempts} attempts`));
+            } else {
+                attempts++;
+                setTimeout(check, interval);
+            }
+        };
+        check();
+    });
+}
+
 function extractTweet() {
     try {
         const articleElements = document.querySelectorAll(SELECTORS.ARTICLE);
@@ -73,18 +87,18 @@ function extractTweet() {
             return null;
         }
 
-        const tweetNormalElement = articleElements[0].querySelector(SELECTORS.TWEET_NORMAL); // 优先取普通推文
-        const tweetArticleElement = articleElements[0].querySelector(SELECTORS.TWEET_ARTICLE); // 优先取普通推文
-        if(tweetNormalElement){
+        const tweetNormalElement = articleElements[0].querySelector(SELECTORS.TWEET_NORMAL);
+        const tweetArticleElement = articleElements[0].querySelector(SELECTORS.TWEET_ARTICLE);
+        if (tweetNormalElement) {
             const content = tweetNormalElement?.innerText;
-            return {content};
-        }else if (tweetArticleElement){
+            return { content };
+        } else if (tweetArticleElement) {
             const content = tweetArticleElement?.innerText;
-            return {content};
-        }else{
+            return { content };
+        } else {
             const content = "无内容";
             logger.error('Failed to extract content return default no content');
-            return {content};
+            return { content };
         }
     } catch (error) {
         logger.error('Error extracting tweet:', error.message);
@@ -92,10 +106,12 @@ function extractTweet() {
     }
 }
 
-// 模拟键盘输入
 async function simulateTyping(text) {
     try {
-        const editor = await waitForElement(SELECTORS.TEXTBOX);
+        const editors = await waitForElements(SELECTORS.TEXTBOX);
+        //避免取到私信输入框
+        const editor = editors[editors.length - 1];
+
         editor.focus();
 
         return new Promise((resolve) => {
@@ -125,10 +141,10 @@ async function simulateTyping(text) {
                     }
 
                     editor.dispatchEvent(new KeyboardEvent('keyup', eventOptions));
-                    editor.dispatchEvent(new Event('input', {bubbles: true}));
+                    editor.dispatchEvent(new Event('input', { bubbles: true }));
 
                     i++;
-                    setTimeout(typeNextChar, Math.random() * 50 + 80); // 80-130ms 随机间隔输入
+                    setTimeout(typeNextChar, Math.random() * 50 + 80);
                 } else {
                     logger.info('Typing completed');
                     resolve();
@@ -143,9 +159,23 @@ async function simulateTyping(text) {
     }
 }
 
-// 创建多选列表
-function createStyleSelector(aiButton, onSelect) {
-    // 移除已有的选择器（避免重复）
+async function getDefaultModel() {
+    return new Promise((resolve) => {
+        chrome.storage.local.get(['defaultModel'], (result) => {
+            resolve(result.defaultModel || 'grok-3');
+        });
+    });
+}
+
+async function getCustomPrompt() {
+    return new Promise((resolve) => {
+        chrome.storage.local.get(['customPrompt'], (result) => {
+            resolve(result.customPrompt || '如果推文内容为空，生成简短的友好评论。不得包含敏感或违规内容，不要有任何特殊字符，或者符号。只输出评论内容。');
+        });
+    });
+}
+
+function createReplyStyleSelector(aiButton, onSelect) {
     const existingSelector = document.querySelector('.style-selector');
     if (existingSelector) existingSelector.remove();
 
@@ -160,12 +190,10 @@ function createStyleSelector(aiButton, onSelect) {
     selector.style.padding = '10px';
     selector.style.minWidth = '150px';
 
-    // 计算位置（显示在按钮下方）
     const rect = aiButton.getBoundingClientRect();
     selector.style.top = `${rect.bottom + window.scrollY + 5}px`;
     selector.style.left = `${rect.left + window.scrollX}px`;
 
-    // 添加选项
     REPLY_STYLES.forEach(style => {
         const option = document.createElement('div');
         option.style.padding = '8px';
@@ -188,7 +216,6 @@ function createStyleSelector(aiButton, onSelect) {
 
     document.body.appendChild(selector);
 
-    // 点击其他地方关闭
     const closeSelector = (event) => {
         if (!selector.contains(event.target) && event.target !== aiButton) {
             selector.remove();
@@ -202,7 +229,6 @@ function createStyleSelector(aiButton, onSelect) {
     return selector;
 }
 
-// 修改：创建 AI 回复按钮
 function createAIButton(replyButton) {
     if (state.aiButton) {
         return state.aiButton;
@@ -226,46 +252,63 @@ function createAIButton(replyButton) {
         e.preventDefault();
         e.stopPropagation();
 
-        // 显示风格选择器
-        createStyleSelector(aiButton, async (selectedStyle) => {
-            try {
-                aiButton.disabled = true;
-                textSpan.innerText = '生成中';
+        const model = await getDefaultModel();
+        createReplyStyleSelector(aiButton, async (style) => {
+            let retryCount = 0;
+            const maxRetries = CONFIG.MAX_RETRY_COUNT;
 
-                const tweet = extractTweet();
-                if (!tweet) throw new Error('Unable to extract tweet');
+            const tryGenerateReply = async () => {
+                try {
+                    aiButton.disabled = true;
+                    textSpan.innerText = retryCount > 0 ? '重试中' : '生成中';
 
-                const messages = [
-                    {
-                        role: 'user',
-                        content: `你是一个推特用户，请对以下推文内容发表评论[${tweet.content}] 要求：1. ${selectedStyle.prompt} 2. 如果推文内容为空，生成简短的友好评论。3. 不得包含敏感或违规内容，不要有任何特殊字符，或者符号 4. 只输出评论内容。`
-                    }
-                ];
+                    const tweet = extractTweet();
+                    if (!tweet) throw new Error('Unable to extract tweet');
 
-                const response = await new Promise((resolve, reject) => {
-                    chrome.runtime.sendMessage({ action: 'requestOpenAI', messages }, (resp) => {
-                        if (resp.success) resolve(resp);
-                        else reject(new Error(resp.error || 'OpenAI request failed'));
+                    const customPrompt = await getCustomPrompt();
+                    const messages = [
+                        {
+                            role: 'user',
+                            content: `你是一个推特用户，请对以下推文内容发表评论[${tweet.content}] 要求：1. ${style.prompt} ${customPrompt}`
+                        }
+                    ];
+
+                    const response = await new Promise((resolve, reject) => {
+                        chrome.runtime.sendMessage({ action: 'requestAI', messages, model }, (resp) => {
+                            if (resp.success) resolve(resp);
+                            else reject(new Error(resp.error || 'AI request failed'));
+                        });
                     });
-                });
 
-                const replyContent = response.reply.replace(/[\r\n]+/g, '');
-                logger.info('OpenAI reply:', replyContent);
+                    const replyContent = response.reply.replace(/[\r\n]+/g, '');
+                    logger.info('AI reply:', replyContent);
 
-                const truncatedReply = replyContent.slice(0, CONFIG.MAX_AI_REPLY_LIMIT);
-                logger.info('after truncatedReply:', truncatedReply);
+                    const truncatedReply = replyContent.slice(0, CONFIG.MAX_AI_REPLY_LIMIT);
+                    logger.info('after truncatedReply:', truncatedReply);
 
-                await simulateTyping(truncatedReply);
-                logger.info('AI reply inserted');
+                    await simulateTyping(truncatedReply);
+                    logger.info('AI reply inserted');
 
-                aiButton.disabled = false;
-                textSpan.innerText = 'AI';
-            } catch (error) {
-                logger.error('AI button click failed:', error.message);
-                showUserError('Failed to generate reply. Please try again.');
-                aiButton.disabled = false;
-                textSpan.innerText = 'AI';
-            }
+                    aiButton.disabled = false;
+                    textSpan.innerText = 'AI';
+                } catch (error) {
+                    retryCount++;
+                    if (retryCount <= maxRetries) {
+                        logger.warn(`AI request failed, retrying (${retryCount}/${maxRetries}):`, error.message);
+                        await tryGenerateReply(); // 重试
+                    } else {
+                        logger.error('AI button click failed after retries:', error.message);
+                        const errorMessage = model === 'gemini'
+                            ? '生成回复失败，请检查代理 IP 是否符合 Gemini 的限制。'
+                            : '生成回复失败，请稍后重试。';
+                        showUserError(errorMessage);
+                        aiButton.disabled = false;
+                        textSpan.innerText = 'AI';
+                    }
+                }
+            };
+
+            await tryGenerateReply();
         });
     });
 
@@ -273,44 +316,36 @@ function createAIButton(replyButton) {
     return aiButton;
 }
 
-// 插入 AI 按钮
 async function insertAutoReplyButton() {
-
     let attempt = 0;
     while (attempt < CONFIG.MAX_ATTEMPTS) {
         try {
-
             attempt++;
             await sleep(200);
             const replyButton = await waitForElement(SELECTORS.REPLY_BUTTON_SELECTOR);
             const aiButton = createAIButton(replyButton);
             replyButton.parentNode.insertBefore(aiButton, replyButton);
-            //logger.info('AI button inserted');
             break;
-
         } catch (error) {
             if (attempt >= CONFIG.MAX_ATTEMPTS) {
                 logger.error('Failed to insert AI button:', error.message);
                 showUserError('无法插入 AI 按钮，请稍后重试');
-                break; // 达到最大重试次数后退出循环
+                break;
             }
         }
     }
 }
 
-
-// 监听回复框点击
 async function addReplyTextAreaListener() {
     try {
         const replyTextArea = await waitForElement(SELECTORS.REPLY_TEXTAREA);
-        if(replyTextArea) {
-
+        if (replyTextArea) {
             if (replyTextArea.dataset.listenerAdded === 'true') {
                 //console.log('监听器已注入，避免重复');
-            }else {
+            } else {
                 replyTextArea.removeEventListener('click', insertAutoReplyButton);
                 replyTextArea.addEventListener('click', insertAutoReplyButton);
-                replyTextArea.dataset.listenerAdded = 'true'; // 添加标记
+                replyTextArea.dataset.listenerAdded = 'true';
                 logger.info('Reply textarea listener added');
             }
         }
@@ -319,9 +354,7 @@ async function addReplyTextAreaListener() {
     }
 }
 
-// 初始化页面
 async function initPage() {
-
     try {
         runMonitorWhenReady();
     } catch (error) {
@@ -329,7 +362,6 @@ async function initPage() {
     }
 }
 
-// 用户错误提示
 function showUserError(message) {
     const div = document.createElement('div');
     div.style.position = 'fixed';
@@ -345,15 +377,10 @@ function showUserError(message) {
     setTimeout(() => div.remove(), 3000);
 }
 
-// 监听回复按钮出现的函数
 async function monitorReplyButton() {
-    // 定义目标选择器（根据X平台的HTML结构调整）
-
-    // 检查按钮是否已存在
     async function checkForReplyButton() {
         const replyButton = document.querySelector(SELECTORS.REPLY_BUTTON_SELECTOR);
         if (replyButton) {
-            //console.log('回复按钮已出现:', replyButton, '时间:', new Date().toISOString());
             await addReplyTextAreaListener();
         }
     }
@@ -364,33 +391,25 @@ async function monitorReplyButton() {
         }
     });
 
-    // 配置观察选项
     const config = {
-        childList: true, // 监听子节点变化
-        subtree: true,   // 监听整个子树
+        childList: true,
+        subtree: true,
     };
 
-    // 开始观察整个文档
     observer.observe(document.body, config);
-
-    // 初始检查
     await checkForReplyButton();
-
 }
-
 
 function runMonitorWhenReady() {
     if (document.readyState === 'complete' || document.readyState === 'interactive') {
-        setTimeout(monitorReplyButton, 1000); // 延迟1秒执行
+        setTimeout(monitorReplyButton, 1000);
     } else {
         document.addEventListener('DOMContentLoaded', () => {
-            setTimeout(monitorReplyButton, 1000); // 延迟1秒执行
+            setTimeout(monitorReplyButton, 1000);
         });
     }
 }
 
-
-// 初始化
 initPage().then(() => {
-    chrome.runtime.sendMessage({action: 'lanniaoContentScriptLoaded'});
+    chrome.runtime.sendMessage({ action: 'lanniaoContentScriptLoaded' });
 });

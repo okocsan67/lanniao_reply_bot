@@ -1,48 +1,73 @@
-// background.js
-// Chrome 扩展后台脚本，处理 OpenAI API 请求和页面初始化
-
-// 日志工具
 const logger = {
     info: (...args) => console.log('[Lanniao Extension]', ...args),
     error: (...args) => console.error('[Lanniao Extension]', ...args),
 };
 
-
-// 缓存 API 密钥到本地
-let cachedApiKey = null;
-async function getApiKey() {
-    if (cachedApiKey) return cachedApiKey;
-    const result = await chrome.storage.local.get(['openaiApiKey']);
-    cachedApiKey = result.openaiApiKey;
-    return cachedApiKey;
+async function getApiKey(model) {
+    const result = await chrome.storage.local.get(['grokApiKey', 'geminiApiKey']);
+    if (model === 'grok-3') {
+        return result.grokApiKey;
+    } else if (model === 'gemini') {
+        return result.geminiApiKey;
+    }
+    return null;
 }
 
-// 监听存储变化
+async function getDefaultModel() {
+    const result = await chrome.storage.local.get(['defaultModel']);
+    return result.defaultModel || 'grok-3';
+}
+
 chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.openaiApiKey) {
-        cachedApiKey = changes.openaiApiKey.newValue;
-        logger.info('OpenAI API key updated:', cachedApiKey ? 'set' : 'cleared');
+    if (area === 'local') {
+        if (changes.grokApiKey) {
+            logger.info('Grok API key updated:', changes.grokApiKey.newValue ? 'set' : 'cleared');
+        }
+        if (changes.geminiApiKey) {
+            logger.info('Gemini API key updated:', changes.geminiApiKey.newValue ? 'set' : 'cleared');
+        }
+        if (changes.defaultModel) {
+            logger.info('Default model updated:', changes.defaultModel.newValue);
+        }
     }
 });
 
-// 发送 OpenAI 请求
-async function sendOpenAIRequest(messages) {
-    const apiKey = await getApiKey();
+async function sendAIRequest(messages, model) {
+    const apiKey = await getApiKey(model);
     if (!apiKey) {
-        throw new Error('OpenAI API key not set. Please configure in options page.');
+        throw new Error(`${model} API key not set. Please configure in options page.`);
+    }
+
+    let apiUrl, requestBody, headers;
+    if (model === 'grok-3') {
+        apiUrl = 'https://api.gptapi.us/v1/chat/completions';
+        headers = {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+        };
+        requestBody = {
+            model: 'grok-3',
+            messages,
+        };
+    } else if (model === 'gemini') {
+        apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+        headers = {
+            'Content-Type': 'application/json',
+        };
+        requestBody = {
+            contents: messages.map(message => ({
+                parts: [{ text: message.content }],
+            })),
+        };
+    } else {
+        throw new Error('Unsupported model: ' + model);
     }
 
     try {
-        const response = await fetch('https://api.gptapi.us/v1/chat/completions', {
+        const response = await fetch(apiUrl, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify({
-                model: 'grok-3',
-                messages,
-            }),
+            headers,
+            body: JSON.stringify(requestBody),
         });
 
         if (!response.ok) {
@@ -50,30 +75,29 @@ async function sendOpenAIRequest(messages) {
         }
 
         const data = await response.json();
-        logger.info('OpenAI response:', data);
-        return data.choices[0].message.content;
+        logger.info('AI response:', data);
+        return model === 'grok-3' ? data.choices[0].message.content : data.candidates[0].content.parts[0].text;
     } catch (error) {
-        logger.error('OpenAI request failed:', error.message);
+        logger.error('AI request failed:', error.message);
         throw error;
     }
 }
 
-// 消息处理
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (!sender.tab || !sender.url.startsWith('https://x.com/')) {
         logger.error('Unauthorized message from:', sender.url);
         return;
-      }
+    }
 
-    if (message.action === 'requestOpenAI') {
-        sendOpenAIRequest(message.messages)
+    if (message.action === 'requestAI') {
+        const model = message.model || getDefaultModel();
+        sendAIRequest(message.messages, model)
             .then((reply) => sendResponse({ success: true, reply }))
             .catch((error) => sendResponse({ success: false, error: error.message }));
-        return true; // 异步响应
+        return true;
     }
 });
 
-// 扩展安装/更新处理
 chrome.runtime.onInstalled.addListener((details) => {
     logger.info('Extension installed/updated:', details.reason);
     if (details.reason === 'install') {

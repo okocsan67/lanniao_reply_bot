@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>设置 OpenAI API 密钥</title>
+    <title>设置 AI API 密钥和模型</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -18,12 +18,17 @@
             margin-bottom: 10px;
             font-weight: bold;
         }
-        input {
+        input, select, textarea {
             width: 100%;
             padding: 8px;
             margin-bottom: 20px;
             border: 1px solid #ccc;
             border-radius: 4px;
+            box-sizing: border-box;
+        }
+        textarea {
+            height: 100px;
+            resize: vertical;
         }
         button {
             padding: 10px 20px;
@@ -39,10 +44,19 @@
     </style>
 </head>
 <body>
-    <h1>设置 OpenAI API 密钥</h1>
-    <label for="apiKey">API 密钥:</label>
-    <input id="apiKey" type="text" placeholder="请输入 OpenAI API 密钥">
-    <button id="save">保存</button>
-    <script src="options.js"></script>
+<h1>设置 AI API 密钥和模型</h1>
+<label for="grokApiKey">Grok API 密钥:</label>
+<input id="grokApiKey" type="text" placeholder="请输入 Grok API 密钥">
+<label for="geminiApiKey">Gemini API 密钥:</label>
+<input id="geminiApiKey" type="text" placeholder="请输入 Gemini API 密钥">
+<label for="defaultModel">默认模型:</label>
+<select id="defaultModel">
+    <option value="grok-3">Grok-3</option>
+    <option value="gemini">Gemini</option>
+</select>
+<label for="customPrompt">自定义回复提示:</label>
+<textarea id="customPrompt" placeholder="请输入自定义回复提示，例如：如果推文内容为空，生成简短的友好评论。不得包含敏感或违规内容，不要有任何特殊字符，或者符号。只输出评论内容。"></textarea>
+<button id="save">保存</button>
+<script src="options.js"></script>
 </body>
 </html>

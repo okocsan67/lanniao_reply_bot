@@ -1,21 +1,37 @@
-// options.js
 document.getElementById('save').addEventListener('click', () => {
-    const apiKey = document.getElementById('apiKey').value.trim();
-    if (!apiKey) {
-        alert('请输入有效的 OpenAI API 密钥');
+    const grokApiKey = document.getElementById('grokApiKey').value.trim();
+    const geminiApiKey = document.getElementById('geminiApiKey').value.trim();
+    const defaultModel = document.getElementById('defaultModel').value;
+    const customPrompt = document.getElementById('customPrompt').value.trim();
+
+    if (!grokApiKey && !geminiApiKey) {
+        alert('请至少输入一个有效的 API 密钥');
         return;
     }
 
-    chrome.storage.local.set({ openaiApiKey: apiKey }, () => {
-        alert('API 密钥已保存');
-        document.getElementById('apiKey').value = apiKey; // 清空输入框
+    chrome.storage.local.set({
+        grokApiKey: grokApiKey || null,
+        geminiApiKey: geminiApiKey || null,
+        defaultModel: defaultModel,
+        customPrompt: customPrompt || '如果推文内容为空，生成简短的友好评论。不得包含敏感或违规内容，不要有任何特殊字符，或者符号。只输出评论内容。'
+    }, () => {
+        alert('设置已保存');
     });
 });
 
-// 加载已保存的密钥（可选，供用户查看）
-chrome.storage.local.get(['openaiApiKey'], (result) => {
-    if (result.openaiApiKey) {
-        document.getElementById('apiKey').placeholder = result.openaiApiKey;
-        document.getElementById('apiKey').value = result.openaiApiKey;
+chrome.storage.local.get(['grokApiKey', 'geminiApiKey', 'defaultModel', 'customPrompt'], (result) => {
+    if (result.grokApiKey) {
+        document.getElementById('grokApiKey').value = result.grokApiKey;
+    }
+    if (result.geminiApiKey) {
+        document.getElementById('geminiApiKey').value = result.geminiApiKey;
+    }
+    if (result.defaultModel) {
+        document.getElementById('defaultModel').value = result.defaultModel;
+    }
+    if (result.customPrompt) {
+        document.getElementById('customPrompt').value = result.customPrompt;
+    } else {
+        document.getElementById('customPrompt').value = '如果推文内容为空，生成简短的友好评论。不得包含敏感或违规内容，不要有任何特殊字符，或者符号。只输出评论内容。';
     }
 });
