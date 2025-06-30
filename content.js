@@ -337,7 +337,10 @@ function createAIButton(replyButton) {
                     logger.info('AI reply:', replyContent);
 
                     replyContent = `${replyContent} ${quoteSuffix}`;
-                    replyContent = replyContent.replace(filterWords, '');
+
+                    const wordsToFilter = filterWords.split(',').map(word => word.trim());
+                    const regex = new RegExp(wordsToFilter.join('|'), 'gi');
+                    replyContent = replyContent.replace(regex, '');
 
                     const truncatedReply = replyContent.slice(0, CONFIG.MAX_AI_REPLY_LIMIT);
                     logger.info('after truncatedReply:', truncatedReply);
