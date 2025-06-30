@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LanNiao X BOT",
-  "version": "0.0.0.5",
+  "version": "0.0.0.6",
   "description": "自动根据推文回复评论的机器人 by蓝鸟会",
   "permissions": ["storage"],
   "host_permissions": [
