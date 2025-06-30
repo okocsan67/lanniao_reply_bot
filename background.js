@@ -3,53 +3,65 @@ const logger = {
     error: (...args) => console.error('[Lanniao Extension]', ...args),
 };
 
-async function getApiKey(model) {
-    const result = await chrome.storage.local.get(['grokApiKey', 'geminiApiKey']);
-    if (model === 'grok-3') {
-        return result.grokApiKey;
-    } else if (model === 'gemini') {
-        return result.geminiApiKey;
-    }
-    return null;
+async function getApiKey(modelSource) {
+    const result = await chrome.storage.local.get([
+        'googleApiKey',
+        'deepseekApiKey',
+        'gptapiApiKey',
+        'gptapiModel'
+    ]);
+    return {
+        apiKey: result[`${modelSource}ApiKey`],
+        gptapiModel: modelSource === 'gptapi' ? result.gptapiModel || 'gpt-4o-mini' : null
+    };
 }
 
 async function getDefaultModel() {
-    const result = await chrome.storage.local.get(['defaultModel']);
-    return result.defaultModel || 'grok-3';
+    const result = await chrome.storage.local.get(['activeModelSource', 'gptapiModel']);
+    return {
+        modelSource: result.activeModelSource || 'gptapi',
+        model: result.activeModelSource === 'gptapi' ? result.gptapiModel || 'gpt-4o-mini' : result.activeModelSource
+    };
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local') {
-        if (changes.grokApiKey) {
-            logger.info('Grok API key updated:', changes.grokApiKey.newValue ? 'set' : 'cleared');
+        if (changes.googleApiKey) {
+            logger.info('Google API key updated:', changes.googleApiKey.newValue ? 'set' : 'cleared');
         }
-        if (changes.geminiApiKey) {
-            logger.info('Gemini API key updated:', changes.geminiApiKey.newValue ? 'set' : 'cleared');
+        if (changes.deepseekApiKey) {
+            logger.info('DeepSeek API key updated:', changes.deepseekApiKey.newValue ? 'set' : 'cleared');
         }
-        if (changes.defaultModel) {
-            logger.info('Default model updated:', changes.defaultModel.newValue);
+        if (changes.gptapiApiKey) {
+            logger.info('gptapi.us API key updated:', changes.gptapiApiKey.newValue ? 'set' : 'cleared');
+        }
+        if (changes.activeModelSource) {
+            logger.info('Active model source updated:', changes.activeModelSource.newValue);
+        }
+        if (changes.gptapiModel) {
+            logger.info('gptapi.us model updated:', changes.gptapiModel.newValue);
         }
     }
 });
 
-async function sendAIRequest(messages, model) {
-    const apiKey = await getApiKey(model);
+async function sendAIRequest(messages, modelSource, model) {
+    const { apiKey, gptapiModel } = await getApiKey(modelSource);
     if (!apiKey) {
-        throw new Error(`${model} API key not set. Please configure in options page.`);
+        throw new Error(`${modelSource} API key not set. Please configure in options page.`);
     }
 
     let apiUrl, requestBody, headers;
-    if (model === 'grok-3') {
+    if (modelSource === 'gptapi') {
         apiUrl = 'https://api.gptapi.us/v1/chat/completions';
         headers = {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${apiKey}`,
         };
         requestBody = {
-            model: 'grok-3',
+            model: gptapiModel || 'gpt-4o-mini',
             messages,
         };
-    } else if (model === 'gemini') {
+    } else if (modelSource === 'google') {
         apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
         headers = {
             'Content-Type': 'application/json',
@@ -59,8 +71,18 @@ async function sendAIRequest(messages, model) {
                 parts: [{ text: message.content }],
             })),
         };
+    } else if (modelSource === 'deepseek') {
+        apiUrl = 'https://api.deepseek.com/v1/chat/completions'; // 占位，需替换
+        headers = {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+        };
+        requestBody = {
+            model: 'deepseek',
+            messages,
+        };
     } else {
-        throw new Error('Unsupported model: ' + model);
+        throw new Error('Unsupported model source: ' + modelSource);
     }
 
     try {
@@ -71,12 +93,15 @@ async function sendAIRequest(messages, model) {
         });
 
         if (!response.ok) {
-            throw new Error(`HTTP error: ${response.status} ${response.statusText}`);
+            const errorData = await response.json().catch(() => ({}));
+            const errorMessage = errorData.error?.message || `HTTP error: ${response.status} ${response.statusText}`;
+            logger.error('AI request failed:', errorMessage);
+            throw new Error(errorMessage);
         }
 
         const data = await response.json();
         logger.info('AI response:', data);
-        return model === 'grok-3' ? data.choices[0].message.content : data.candidates[0].content.parts[0].text;
+        return modelSource === 'google' ? data.candidates[0].content.parts[0].text : data.choices[0].message.content;
     } catch (error) {
         logger.error('AI request failed:', error.message);
         throw error;
@@ -90,10 +115,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.action === 'requestAI') {
-        const model = message.model || getDefaultModel();
-        sendAIRequest(message.messages, model)
-            .then((reply) => sendResponse({ success: true, reply }))
-            .catch((error) => sendResponse({ success: false, error: error.message }));
+        getDefaultModel().then(({ modelSource, model }) => {
+            sendAIRequest(message.messages, modelSource, model)
+                .then((reply) => sendResponse({ success: true, reply }))
+                .catch((error) => sendResponse({ success: false, error: error.message }));
+        });
         return true;
     }
 });

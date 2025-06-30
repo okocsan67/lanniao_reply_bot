@@ -4,11 +4,13 @@
   "version": "0.0.0.5",
   "description": "自动根据推文回复评论的机器人 by蓝鸟会",
   "permissions": ["storage"],
-  "host_permissions": ["https://x.com/*",
-                       "https://gptapi.us/*",
-                       "https://api.gptapi.us/*",
-                       "https://generativelanguage.googleapis.com/*"
-                      ],
+  "host_permissions": [
+    "https://x.com/*",
+    "https://gptapi.us/*",
+    "https://api.gptapi.us/*",
+    "https://generativelanguage.googleapis.com/*",
+    "https://api.deepseek.com/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },

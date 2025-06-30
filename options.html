@@ -18,7 +18,7 @@
             margin-bottom: 10px;
             font-weight: bold;
         }
-        input, select, textarea {
+        select, input, textarea {
             width: 100%;
             padding: 8px;
             margin-bottom: 20px;
@@ -41,22 +41,100 @@
         button:hover {
             background-color: #1991DB;
         }
+        .config-section {
+            display: none;
+        }
+        .config-section.active {
+            display: block;
+        }
+        .description {
+            font-size: 14px;
+            color: #555;
+            margin-bottom: 20px;
+            line-height: 1.5;
+        }
+        .description a {
+            color: #1DA1F2;
+            text-decoration: none;
+        }
+        .description a:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
 <h1>设置 AI API 密钥和模型</h1>
-<label for="grokApiKey">Grok API 密钥:</label>
-<input id="grokApiKey" type="text" placeholder="请输入 Grok API 密钥">
-<label for="geminiApiKey">Gemini API 密钥:</label>
-<input id="geminiApiKey" type="text" placeholder="请输入 Gemini API 密钥">
-<label for="defaultModel">默认模型:</label>
-<select id="defaultModel">
-    <option value="grok-3">Grok-3</option>
-    <option value="gemini">Gemini</option>
+<label for="modelSource">模型来源:</label>
+<select id="modelSource">
+    <option value="google">谷歌官方-gemini</option>
+    <option value="deepseek">DeepSeek官方-r1</option>
+    <option value="gptapi">gptapi.us(第三方聚合)</option>
 </select>
-<label for="customPrompt">自定义回复提示:</label>
-<textarea id="customPrompt" placeholder="请输入自定义回复提示，例如：如果推文内容为空，生成简短的友好评论。不得包含敏感或违规内容，不要有任何特殊字符，或者符号。只输出评论内容。"></textarea>
-<button id="save">保存</button>
+
+<!-- 谷歌官方配置 -->
+<div id="google-config" class="config-section">
+    <p class="description">
+        说明：谷歌官方的 Gemini 模型，免费，快速，但是有 IP 限制，最好使用台湾 IP。
+        <br/>
+        API 密钥注册地址：
+        <a href="https://aistudio.google.com/apikey?hl=zh-cn" target="_blank">https://aistudio.google.com/apikey</a>
+    </p>
+    <label for="googleApiKey">谷歌 API 密钥:</label>
+    <input id="googleApiKey" type="text" placeholder="请输入谷歌 API 密钥">
+    <label for="googleCustomPrompt">自定义回复提示:</label>
+    <textarea id="googleCustomPrompt" placeholder="如果推文内容为空，生成简短的友好评论。不得包含敏感或违规内容，不要有任何特殊字符，或者符号。只输出评论内容。并且评论的语言保持跟推文一致。"></textarea>
+    <label for="googleFilterWords">过滤文字（英文逗号分隔）:</label>
+    <input id="googleFilterWords" type="text" placeholder="请输入需过滤的文字，例如：广告,敏感词">
+    <label for="googleQuoteSuffix">推文引用后缀:</label>
+    <input id="googleQuoteSuffix" type="text" placeholder="请输入引用后缀，例如：https://x.com/lanniaohui">
+    <button id="googleEnable">启用</button>
+</div>
+
+<!-- DeepSeek 官方配置 -->
+<div id="deepseek-config" class="config-section">
+    <p class="description">
+        说明：deepseek官方模型，速度一般，收费，无IP限制。
+        <br/>
+        API 密钥注册地址：
+        <a href="https://platform.deepseek.com/api_keys" target="_blank">https://platform.deepseek.com/api_keys</a>
+    </p>
+    <label for="deepseekApiKey">DeepSeek API 密钥:</label>
+    <input id="deepseekApiKey" type="text" placeholder="请输入 DeepSeek官网 API 密钥">
+    <label for="deepseekCustomPrompt">自定义回复提示:</label>
+    <textarea id="deepseekCustomPrompt" placeholder="如果推文内容为空，生成简短的友好评论。不得包含敏感或违规内容，不要有任何特殊字符，或者符号。只输出评论内容。并且评论的语言保持跟推文一致。"></textarea>
+    <label for="deepseekFilterWords">过滤文字（逗号分隔）:</label>
+    <input id="deepseekFilterWords" type="text" placeholder="请输入需过滤的文字，例如：广告,敏感词">
+    <label for="deepseekQuoteSuffix">推文引用后缀:</label>
+    <input id="deepseekQuoteSuffix" type="text" placeholder="请输入引用后缀，例如：https://x.com/lanniaohui">
+    <button id="deepseekEnable">启用</button>
+</div>
+
+<!-- gptapi.us 配置 -->
+<div id="gptapi-config" class="config-section">
+    <p class="description">
+        说明：第三方模型聚合网站，收费，推荐使用gpt-4o-mini比较快，无IP限制。
+        <br/>
+        API 密钥注册地址(我的推荐码可以送0.3美金)：
+        <a href="https://www.gptapi.us/register?aff=4gdE" target="_blank">https://www.gptapi.us/register?aff=4gdE</a>
+    </p>
+    <label for="gptapiApiKey">gptapi.us API 密钥:</label>
+    <input id="gptapiApiKey" type="text" placeholder="请输入 gptapi.us API 密钥">
+    <label for="gptapiModel">模型选择:</label>
+    <select id="gptapiModel">
+        <option value="gpt-4o-mini">gpt-4o-mini(推荐)</option>
+        <option value="grok-3">Grok-3</option>
+        <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+        <option value="deepseek-r1">deepseek-r1</option>
+    </select>
+    <label for="gptapiCustomPrompt">自定义回复提示:</label>
+    <textarea id="gptapiCustomPrompt" placeholder="如果推文内容为空，生成简短的友好评论。不得包含敏感或违规内容，不要有任何特殊字符，或者符号。只输出评论内容。并且评论的语言保持跟推文一致。"></textarea>
+    <label for="gptapiFilterWords">过滤文字（英文逗号分隔）:</label>
+    <input id="gptapiFilterWords" type="text" placeholder="请输入需过滤的文字，例如：广告,敏感词">
+    <label for="gptapiQuoteSuffix">推文引用后缀:</label>
+    <input id="gptapiQuoteSuffix" type="text" placeholder="请输入引用后缀，例如：https://x.com/lanniaohui">
+    <button id="gptapiEnable">启用</button>
+</div>
+
 <script src="options.js"></script>
 </body>
 </html>

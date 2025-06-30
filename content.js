@@ -5,6 +5,7 @@ const SELECTORS = {
     TWEET_ARTICLE: 'div[data-testid="twitterArticleReadView"]',
     REPLY_TEXTAREA: 'div[data-testid="tweetTextarea_0"], div[data-testid="inline_reply_offscreen"]',
     TEXTBOX: 'div[role="textbox"][contenteditable="true"]',
+    REPLY_INPUT: 'div[class="DraftEditor-root"]',
     REPLY_BUTTON_SELECTOR: 'button[data-testid="tweetButtonInline"], button[data-testid="tweetButton"]',
     LIKE_BUTTON: 'button[data-testid="like"]',
 };
@@ -15,11 +16,6 @@ const REPLY_STYLES = [
     { id: 'humorous', label: '幽默回复', prompt: '以幽默、友好的语气回复，评论简洁且不超过30字，无特殊字符。' },
     { id: 'collaboration', label: '寻求合作', prompt: '以专业、热情的语气寻求合作机会，评论简洁且不超过30字，无特殊字符。' },
     { id: 'share_opinion', label: '分享观点', prompt: '以中立、清晰的语气分享个人观点，评论简洁且不超过30字，无特殊字符。' },
-];
-
-const MODELS = [
-    { id: 'grok-3', label: 'Grok-3' },
-    { id: 'gemini', label: 'Gemini' },
 ];
 
 const CONFIG = {
@@ -108,9 +104,25 @@ function extractTweet() {
 
 async function simulateTyping(text) {
     try {
-        const editors = await waitForElements(SELECTORS.TEXTBOX);
+        //const editors = await waitForElements(SELECTORS.TEXTBOX);
         //避免取到私信输入框
-        const editor = editors[editors.length - 1];
+        //const editor = editors[editors.length - 1];
+
+        let editor = null;
+
+        const draftEditors = document.querySelectorAll(SELECTORS.REPLY_INPUT);
+        for (const draftEditor of draftEditors) {
+            if (draftEditor.textContent.includes('回复') || draftEditor.textContent.includes('reply')) {
+                editor = draftEditor.querySelector(SELECTORS.TEXTBOX);
+                if (editor) break;
+            }
+        }
+
+        // 如果未找到，抛出错误
+        if (!editor) {
+            logger.error('No valid reply textbox found');
+            throw new Error('No valid reply textbox found');
+        }
 
         editor.focus();
 
@@ -161,16 +173,53 @@ async function simulateTyping(text) {
 
 async function getDefaultModel() {
     return new Promise((resolve) => {
-        chrome.storage.local.get(['defaultModel'], (result) => {
-            resolve(result.defaultModel || 'grok-3');
+        if (!chrome.storage || !chrome.storage.local) {
+            logger.error('chrome.storage.local 不可用，回退到默认模型');
+            resolve('gptapi');
+            return;
+        }
+        chrome.storage.local.get(['activeModelSource', 'gptapiModel'], (result) => {
+            const modelSource = result.activeModelSource || 'gptapi';
+            const model = modelSource === 'gptapi' ? result.gptapiModel || 'grok-3' : modelSource;
+            resolve(model);
         });
     });
 }
 
+async function getFilterWords() {
+    return new Promise((resolve) => {
+        if (!chrome.storage || !chrome.storage.local) {
+            logger.error('chrome.storage.local 不可用，回退到空过滤词');
+            resolve('');
+            return;
+        }
+        chrome.storage.local.get(['activeModelSource', 'googleFilterWords', 'deepseekFilterWords', 'gptapiFilterWords'], (result) => {
+            const modelSource = result.activeModelSource || 'gptapi';
+            resolve(result[`${modelSource}FilterWords`] || '');
+        });
+    });
+}
+
+async function getQuoteSuffix() {
+    return new Promise((resolve) => {
+        if (!chrome.storage || !chrome.storage.local) {
+            logger.error('chrome.storage.local 不可用，回退到空引用后缀');
+            resolve('');
+            return;
+        }
+        chrome.storage.local.get(['activeModelSource', 'googleQuoteSuffix', 'deepseekQuoteSuffix', 'gptapiQuoteSuffix'], (result) => {
+            const modelSource = result.activeModelSource || 'gptapi';
+            resolve(result[`${modelSource}QuoteSuffix`] || '');
+        });
+    });
+}
+
+
 async function getCustomPrompt() {
     return new Promise((resolve) => {
-        chrome.storage.local.get(['customPrompt'], (result) => {
-            resolve(result.customPrompt || '如果推文内容为空，生成简短的友好评论。不得包含敏感或违规内容，不要有任何特殊字符，或者符号。只输出评论内容。');
+        chrome.storage.local.get(['activeModelSource', 'googleCustomPrompt', 'deepseekCustomPrompt', 'gptapiCustomPrompt'], (result) => {
+            const modelSource = result.activeModelSource || 'gptapi';
+            resolve(result[`${modelSource}CustomPrompt`] || '如果推文内容为空，生成简短的友好评论。不得包含敏感或违规内容，不要有任何特殊字符，或者符号。只输出评论内容。');
         });
     });
 }
@@ -229,6 +278,7 @@ function createReplyStyleSelector(aiButton, onSelect) {
     return selector;
 }
 
+
 function createAIButton(replyButton) {
     if (state.aiButton) {
         return state.aiButton;
@@ -266,6 +316,9 @@ function createAIButton(replyButton) {
                     if (!tweet) throw new Error('Unable to extract tweet');
 
                     const customPrompt = await getCustomPrompt();
+                    const filterWords = await getFilterWords();
+                    const quoteSuffix = await getQuoteSuffix();
+
                     const messages = [
                         {
                             role: 'user',
@@ -280,8 +333,11 @@ function createAIButton(replyButton) {
                         });
                     });
 
-                    const replyContent = response.reply.replace(/[\r\n]+/g, '');
+                    let replyContent = response.reply.replace(/[\r\n]+/g, '');
                     logger.info('AI reply:', replyContent);
+
+                    replyContent = `${replyContent} ${quoteSuffix}`;
+                    replyContent = replyContent.replace(filterWords, '');
 
                     const truncatedReply = replyContent.slice(0, CONFIG.MAX_AI_REPLY_LIMIT);
                     logger.info('after truncatedReply:', truncatedReply);
@@ -295,12 +351,15 @@ function createAIButton(replyButton) {
                     retryCount++;
                     if (retryCount <= maxRetries) {
                         logger.warn(`AI request failed, retrying (${retryCount}/${maxRetries}):`, error.message);
-                        await tryGenerateReply(); // 重试
+                        await tryGenerateReply();
                     } else {
                         logger.error('AI button click failed after retries:', error.message);
-                        const errorMessage = model === 'gemini'
-                            ? '生成回复失败，请检查代理 IP 是否符合 Gemini 的限制。'
-                            : '生成回复失败，请稍后重试。';
+                        let errorMessage;
+                        if (model === 'google') {
+                            errorMessage = `生成回复失败：${error.message}，请检查代理 IP 是否符合 Gemini 的限制。`;
+                        } else {
+                            errorMessage = `生成回复失败：${error.message}`;
+                        }
                         showUserError(errorMessage);
                         aiButton.disabled = false;
                         textSpan.innerText = 'AI';
@@ -315,6 +374,7 @@ function createAIButton(replyButton) {
     state.aiButton = aiButton;
     return aiButton;
 }
+
 
 async function insertAutoReplyButton() {
     let attempt = 0;
@@ -374,7 +434,7 @@ function showUserError(message) {
     div.style.zIndex = '9999';
     div.textContent = message;
     document.body.appendChild(div);
-    setTimeout(() => div.remove(), 3000);
+    setTimeout(() => div.remove(), 10000);
 }
 
 async function monitorReplyButton() {
