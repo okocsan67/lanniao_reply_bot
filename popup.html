@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>LanNiao 自动互动</title>
+    <style>
+        body {
+            width: 300px;
+            margin: 0;
+            padding: 16px;
+            font-family: Arial, "Microsoft YaHei", sans-serif;
+            color: #0f1419;
+            background: #fff;
+        }
+
+        h1 {
+            margin: 0 0 12px;
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .status {
+            min-height: 18px;
+            margin-bottom: 12px;
+            font-size: 12px;
+            line-height: 1.4;
+            color: #536471;
+        }
+
+        .status.error {
+            color: #b00020;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .stat {
+            padding: 10px 8px;
+            border: 1px solid #eff3f4;
+            border-radius: 8px;
+            background: #f7f9f9;
+            text-align: center;
+        }
+
+        .stat-value {
+            display: block;
+            font-size: 20px;
+            line-height: 1.1;
+            font-weight: 700;
+        }
+
+        .stat-label {
+            display: block;
+            margin-top: 4px;
+            font-size: 12px;
+            color: #536471;
+        }
+
+        .meta {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            margin-bottom: 12px;
+            font-size: 12px;
+            color: #536471;
+        }
+
+        .actions {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+
+        button {
+            height: 36px;
+            border: 0;
+            border-radius: 9999px;
+            color: #fff;
+            background: rgb(29, 155, 240);
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        button.secondary {
+            background: #536471;
+        }
+
+        button.danger {
+            background: #f4212e;
+        }
+
+        button:disabled {
+            opacity: 0.55;
+            cursor: progress;
+        }
+
+        .hint {
+            margin-top: 10px;
+            font-size: 12px;
+            line-height: 1.4;
+            color: #536471;
+        }
+    </style>
+</head>
+<body>
+    <h1>首页自动互动</h1>
+    <div id="status" class="status" role="status">未开始</div>
+
+    <div class="stats" aria-label="自动互动统计">
+        <div class="stat">
+            <span id="replyCount" class="stat-value">0</span>
+            <span class="stat-label">回复</span>
+        </div>
+        <div class="stat">
+            <span id="likeCount" class="stat-value">0</span>
+            <span class="stat-label">点赞</span>
+        </div>
+        <div class="stat">
+            <span id="repostCount" class="stat-value">0</span>
+            <span class="stat-label">转发</span>
+        </div>
+    </div>
+
+    <div class="meta">
+        <span>批次：<strong id="batchCount">0</strong></span>
+        <span>失败：<strong id="failedCount">0</strong></span>
+    </div>
+
+    <div class="actions">
+        <button id="startButton" type="button">开始互动</button>
+        <button id="stopButton" class="danger" type="button">停止</button>
+    </div>
+
+    <div class="hint">开始后会跳转并刷新 X 首页。每批处理后会再次刷新首页，直到点击停止。</div>
+
+    <script src="popup.js"></script>
+</body>
+</html>

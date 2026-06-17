@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>设置 AI API 密钥和模型</title>
+    <title>设置 DeepSeek API 密钥</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -42,9 +42,6 @@
             background-color: #1991DB;
         }
         .config-section {
-            display: none;
-        }
-        .config-section.active {
             display: block;
         }
         .description {
@@ -60,40 +57,60 @@
         .description a:hover {
             text-decoration: underline;
         }
+        .settings-section {
+            padding: 12px;
+            margin-bottom: 20px;
+            border: 1px solid #e6ecf0;
+            border-radius: 8px;
+            background: #f7f9f9;
+        }
+        .settings-section h2 {
+            margin: 0 0 12px;
+            font-size: 15px;
+        }
+        .inline-inputs {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
     </style>
 </head>
 <body>
-<h1>设置 AI API 密钥和模型</h1>
-<label for="modelSource">模型来源:</label>
-<select id="modelSource">
-    <option value="google">谷歌官方-gemini</option>
-    <option value="deepseek">DeepSeek官方-r1</option>
-    <option value="gptapi">gptapi.us(第三方聚合)</option>
+<h1>设置 DeepSeek API 密钥</h1>
+
+<label for="userPersonality">用户性格（影响回复风格）:</label>
+<select id="userPersonality">
+    <option value="friendly">友好型：亲切DeFi爱好者，喜欢分享链上互动</option>
+    <option value="humorous">幽默型：机智NFT meme玩家，轻松吐槽市场</option>
+    <option value="professional">专业型：专业链上分析师，分享深刻见解</option>
+    <option value="casual">随意型：随意HODLer，用币圈日常口语</option>
+    <option value="enthusiastic">热情型：热情Web3布道者，表达FOMO兴奋</option>
+    <option value="custom">自定义（输入提示词）</option>
 </select>
 
-<!-- 谷歌官方配置 -->
-<div id="google-config" class="config-section">
-    <p class="description">
-        说明：谷歌官方的 Gemini 模型，免费，快速，但是有 IP 限制，最好使用台湾 IP。
-        <br/>
-        API 密钥注册地址：
-        <a href="https://aistudio.google.com/apikey?hl=zh-cn" target="_blank">https://aistudio.google.com/apikey</a>
-    </p>
-    <label for="googleApiKey">谷歌 API 密钥:</label>
-    <input id="googleApiKey" type="text" placeholder="请输入谷歌 API 密钥">
-    <label for="googleCustomPrompt">自定义回复提示:</label>
-    <textarea id="googleCustomPrompt" placeholder="如果推文内容为空，生成简短的友好评论。不得包含敏感或违规内容，不要有任何特殊字符，或者符号。只输出评论内容。并且评论的语言保持跟推文一致。"></textarea>
-    <label for="googleFilterWords">过滤文字（英文逗号分隔）:</label>
-    <input id="googleFilterWords" type="text" placeholder="请输入需过滤的文字，例如：广告,敏感词">
-    <label for="googleQuoteSuffix">推文引用后缀:</label>
-    <input id="googleQuoteSuffix" type="text" placeholder="请输入引用后缀，例如：https://x.com/lanniaohui">
-    <button id="googleEnable">启用</button>
+<textarea id="customPersonalityPrompt" placeholder="你是一个高贵的蓝鸟会成员，能够提供一阵见血的评论" style="display: none; width: 100%; height: 60px; margin-top: 10px;"></textarea>
+
+<div class="settings-section">
+    <h2>自动互动设置</h2>
+    <div class="inline-inputs">
+        <div>
+            <label for="autoInteractionMinDelaySeconds">最小间隔（秒）:</label>
+            <input id="autoInteractionMinDelaySeconds" type="number" min="5" max="3600" value="30">
+        </div>
+        <div>
+            <label for="autoInteractionMaxDelaySeconds">最大间隔（秒）:</label>
+            <input id="autoInteractionMaxDelaySeconds" type="number" min="5" max="3600" value="60">
+        </div>
+    </div>
+    <label for="autoInteractionBatchSize">每批互动条数:</label>
+    <input id="autoInteractionBatchSize" type="number" min="1" max="20" value="5">
+    <p class="description">默认间隔 30-60 秒，每批默认 5 条，最多 20 条。</p>
 </div>
 
-<!-- DeepSeek 官方配置 -->
+
 <div id="deepseek-config" class="config-section">
     <p class="description">
-        说明：deepseek官方模型，速度一般，收费，无IP限制。
+        说明：DeepSeek 官方模型 deepseek-v4-flash，收费，无 IP 限制。
         <br/>
         API 密钥注册地址：
         <a href="https://platform.deepseek.com/api_keys" target="_blank">https://platform.deepseek.com/api_keys</a>
@@ -101,38 +118,12 @@
     <label for="deepseekApiKey">DeepSeek API 密钥:</label>
     <input id="deepseekApiKey" type="text" placeholder="请输入 DeepSeek官网 API 密钥">
     <label for="deepseekCustomPrompt">自定义回复提示:</label>
-    <textarea id="deepseekCustomPrompt" placeholder="如果推文内容为空，生成简短的友好评论。不得包含敏感或违规内容，不要有任何特殊字符，或者符号。只输出评论内容。并且评论的语言保持跟推文一致。"></textarea>
+    <textarea id="deepseekCustomPrompt" placeholder="像一个真实的 X 用户随手回一句，别像机器人、客服或营销号。根据原帖自然接话，可以赞同、轻微调侃，或补一句个人感受；中文口语化，英文帖就用自然英文。可以偶尔用 HODL、DeFi 这类圈内词，但不要硬塞。不要解释、不列点、不加引号、不带话题标签、不写具体投资建议。只输出一条 8 到 28 字的评论；信息不足时也回一句自然短评。"></textarea>
     <label for="deepseekFilterWords">过滤文字（逗号分隔）:</label>
     <input id="deepseekFilterWords" type="text" placeholder="请输入需过滤的文字，例如：广告,敏感词">
     <label for="deepseekQuoteSuffix">推文引用后缀:</label>
     <input id="deepseekQuoteSuffix" type="text" placeholder="请输入引用后缀，例如：https://x.com/lanniaohui">
     <button id="deepseekEnable">启用</button>
-</div>
-
-<!-- gptapi.us 配置 -->
-<div id="gptapi-config" class="config-section">
-    <p class="description">
-        说明：第三方模型聚合网站，收费，推荐使用gpt-4o-mini比较快，无IP限制。
-        <br/>
-        API 密钥注册地址(我的推荐码可以送0.3美金)：
-        <a href="https://www.gptapi.us/register?aff=4gdE" target="_blank">https://www.gptapi.us/register?aff=4gdE</a>
-    </p>
-    <label for="gptapiApiKey">gptapi.us API 密钥:</label>
-    <input id="gptapiApiKey" type="text" placeholder="请输入 gptapi.us API 密钥">
-    <label for="gptapiModel">模型选择:</label>
-    <select id="gptapiModel">
-        <option value="gpt-4o-mini">gpt-4o-mini(推荐)</option>
-        <option value="grok-3">Grok-3</option>
-        <option value="gemini-1.5-pro">gemini-1.5-pro</option>
-        <option value="deepseek-r1">deepseek-r1</option>
-    </select>
-    <label for="gptapiCustomPrompt">自定义回复提示:</label>
-    <textarea id="gptapiCustomPrompt" placeholder="如果推文内容为空，生成简短的友好评论。不得包含敏感或违规内容，不要有任何特殊字符，或者符号。只输出评论内容。并且评论的语言保持跟推文一致。"></textarea>
-    <label for="gptapiFilterWords">过滤文字（英文逗号分隔）:</label>
-    <input id="gptapiFilterWords" type="text" placeholder="请输入需过滤的文字，例如：广告,敏感词">
-    <label for="gptapiQuoteSuffix">推文引用后缀:</label>
-    <input id="gptapiQuoteSuffix" type="text" placeholder="请输入引用后缀，例如：https://x.com/lanniaohui">
-    <button id="gptapiEnable">启用</button>
 </div>
 
 <script src="options.js"></script>
